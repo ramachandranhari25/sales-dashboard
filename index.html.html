@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hari Dashboard</title>
+  <style>
+:root {
+  --bg: #f4f6fb;
+  --card: #ffffff;
+  --text: #1f2937;
+  --muted: #6b7280;
+  --border: #e5e7eb;
+  --accent: #4f46e5;
+  --shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+}
+
+body.dark {
+  --bg: #0f172a;
+  --card: #1e293b;
+  --text: #e5e7eb;
+  --muted: #94a3b8;
+  --border: #334155;
+  --accent: #e11d48;
+  --shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: "Segoe UI", system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  transition: background 0.3s, color 0.3s;
+}
+
+.topbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 24px;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.topbar h1 { font-size: 1.3rem; }
+
+.controls { display: flex; gap: 8px; }
+
+select, button {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+button:hover, select:hover { border-color: var(--accent); }
+
+.container { max-width: 1200px; margin: 24px auto; padding: 0 16px; display: grid; gap: 20px; }
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 18px;
+  box-shadow: var(--shadow);
+}
+
+.card h3 { font-size: 1rem; margin-bottom: 12px; color: var(--muted); font-weight: 600; }
+
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 16px; }
+
+.kpi span { color: var(--muted); font-size: 0.85rem; }
+.kpi h2 { margin-top: 6px; font-size: 1.7rem; color: var(--accent); }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 20px; }
+
+canvas { max-height: 320px; }
+
+.table-wrap { overflow-x: auto; }
+
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+th { color: var(--muted); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.04em; }
+tbody tr:hover { background: rgba(79, 70, 229, 0.06); }
+
+footer { text-align: center; padding: 24px; color: var(--muted); font-size: 0.85rem; }
+
+@media (max-width: 520px) {
+  .grid { grid-template-columns: 1fr; }
+}
+
+</style>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <h1>📊 Hari sales Dashboard</h1>
+    <div class="controls">
+      <select id="yearFilter" aria-label="Select year">
+        <option value="2025">2025</option>
+        <option value="2026" selected>2026</option>
+      </select>
+      <select id="regionFilter" aria-label="Select region">
+        <option value="All">All Regions</option>
+        <option value="North">North</option>
+        <option value="South">South</option>
+        <option value="East">East</option>
+        <option value="West">West</option>
+      </select>
+      <button id="themeToggle" title="Toggle dark mode">🌓</button>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="kpis">
+      <div class="card kpi"><span>Total Revenue</span><h2 id="kpiRevenue">-</h2></div>
+      <div class="card kpi"><span>Total Orders</span><h2 id="kpiOrders">-</h2></div>
+      <div class="card kpi"><span>Avg Order Value</span><h2 id="kpiAvg">-</h2></div>
+      <div class="card kpi"><span>Best Month</span><h2 id="kpiBest">-</h2></div>
+    </section>
+
+    <section class="grid">
+      <div class="card"><h3>Monthly Revenue</h3><canvas id="lineChart"></canvas></div>
+      <div class="card"><h3>Revenue by Category</h3><canvas id="barChart"></canvas></div>
+      <div class="card"><h3>Revenue by Region</h3><canvas id="doughnutChart"></canvas></div>
+      <div class="card"><h3>Orders vs Revenue (Monthly)</h3><canvas id="comboChart"></canvas></div>
+    </section>
+
+    <section class="card">
+      <h3>Monthly Data</h3>
+      <div class="table-wrap">
+        <table id="dataTable">
+          <thead><tr><th>Month</th><th>Orders</th><th>Revenue (₹)</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <footer>Built with HTML, CSS, JavaScript &amp; Chart.js</footer>
+  <script>
+// ---------- Sample Data ----------
+const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const categories = ["Electronics", "Fashion", "Grocery", "Home", "Sports"];
+const regions = ["North", "South", "East", "West"];
+
+// Deterministic pseudo-random so data stays same on every reload
+function seeded(seed) {
+  let s = seed;
+  return () => {
+    s = (s * 9301 + 49297) % 233280;
+    return s / 233280;
+  };
+}
+
+function buildData() {
+  const data = [];
+  [2025, 2026].forEach((year) => {
+    const rand = seeded(year);
+    months.forEach((m, mi) => {
+      regions.forEach((region) => {
+        categories.forEach((cat) => {
+          const orders = Math.floor(20 + rand() * 80 + mi * 2);
+          const avg = 400 + rand() * 1600;
+          data.push({
+            year, month: mi, region, category: cat,
+            orders,
+            revenue: Math.round(orders * avg),
+          });
+        });
+      });
+    });
+  });
+  return data;
+}
+
+const allData = buildData();
+
+// ---------- Helpers ----------
+const inr = (n) => "₹" + n.toLocaleString("en-IN");
+const sum = (arr, key) => arr.reduce((t, r) => t + r[key], 0);
+
+function groupBy(arr, keyFn) {
+  const map = {};
+  arr.forEach((r) => {
+    const k = keyFn(r);
+    (map[k] ||= []).push(r);
+  });
+  return map;
+}
+
+function getFiltered() {
+  const year = Number(document.getElementById("yearFilter").value);
+  const region = document.getElementById("regionFilter").value;
+  return allData.filter(
+    (r) => r.year === year && (region === "All" || r.region === region)
+  );
+}
+
+// ---------- Charts ----------
+const palette = ["#4f46e5", "#06b6d4", "#f59e0b", "#10b981", "#ef4444"];
+let charts = {};
+
+function chartTextColor() {
+  return document.body.classList.contains("dark") ? "#cbd5e1" : "#4b5563";
+}
+function gridColor() {
+  return document.body.classList.contains("dark") ? "#334155" : "#e5e7eb";
+}
+
+function baseOptions() {
+  return {
+    responsive: true,
+    plugins: { legend: { labels: { color: chartTextColor() } } },
+    scales: {
+      x: { ticks: { color: chartTextColor() }, grid: { color: gridColor() } },
+      y: { ticks: { color: chartTextColor() }, grid: { color: gridColor() } },
+    },
+  };
+}
+
+function makeChart(id, config) {
+  if (charts[id]) charts[id].destroy();
+  charts[id] = new Chart(document.getElementById(id), config);
+}
+
+function render() {
+  const rows = getFiltered();
+
+  // Monthly aggregates
+  const byMonth = groupBy(rows, (r) => r.month);
+  const monthRevenue = months.map((_, i) => sum(byMonth[i] || [], "revenue"));
+  const monthOrders = months.map((_, i) => sum(byMonth[i] || [], "orders"));
+
+  // KPIs
+  const totalRevenue = sum(rows, "revenue");
+  const totalOrders = sum(rows, "orders");
+  const bestIdx = monthRevenue.indexOf(Math.max(...monthRevenue));
+  document.getElementById("kpiRevenue").textContent = inr(totalRevenue);
+  document.getElementById("kpiOrders").textContent = totalOrders.toLocaleString("en-IN");
+  document.getElementById("kpiAvg").textContent = inr(Math.round(totalRevenue / totalOrders));
+  document.getElementById("kpiBest").textContent = months[bestIdx];
+
+  // Line chart - monthly revenue
+  makeChart("lineChart", {
+    type: "line",
+    data: {
+      labels: months,
+      datasets: [{
+        label: "Revenue (₹)",
+        data: monthRevenue,
+        borderColor: palette[0],
+        backgroundColor: "rgba(79,70,229,0.15)",
+        fill: true,
+        tension: 0.35,
+      }],
+    },
+    options: baseOptions(),
+  });
+
+  // Bar chart - by category
+  const byCat = groupBy(rows, (r) => r.category);
+  makeChart("barChart", {
+    type: "bar",
+    data: {
+      labels: categories,
+      datasets: [{
+        label: "Revenue (₹)",
+        data: categories.map((c) => sum(byCat[c] || [], "revenue")),
+        backgroundColor: palette,
+        borderRadius: 6,
+      }],
+    },
+    options: { ...baseOptions(), plugins: { legend: { display: false } } },
+  });
+
+  // Doughnut - by region
+  const byReg = groupBy(rows, (r) => r.region);
+  makeChart("doughnutChart", {
+    type: "doughnut",
+    data: {
+      labels: regions,
+      datasets: [{
+        data: regions.map((r) => sum(byReg[r] || [], "revenue")),
+        backgroundColor: palette,
+        borderWidth: 0,
+      }],
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { position: "bottom", labels: { color: chartTextColor() } } },
+    },
+  });
+
+  // Combo - orders (bar) vs revenue (line)
+  const opts = baseOptions();
+  opts.scales.y1 = {
+    position: "right",
+    ticks: { color: chartTextColor() },
+    grid: { drawOnChartArea: false },
+  };
+  makeChart("comboChart", {
+    data: {
+      labels: months,
+      datasets: [
+        { type: "bar", label: "Orders", data: monthOrders, backgroundColor: "rgba(6,182,212,0.6)", yAxisID: "y", borderRadius: 4 },
+        { type: "line", label: "Revenue (₹)", data: monthRevenue, borderColor: palette[2], yAxisID: "y1", tension: 0.35 },
+      ],
+    },
+    options: opts,
+  });
+
+  // Table
+  const tbody = document.querySelector("#dataTable tbody");
+  tbody.innerHTML = months
+    .map((m, i) => `<tr><td>${m}</td><td>${monthOrders[i].toLocaleString("en-IN")}</td><td>${inr(monthRevenue[i])}</td></tr>`)
+    .join("");
+}
+
+// ---------- Events ----------
+document.getElementById("yearFilter").addEventListener("change", render);
+document.getElementById("regionFilter").addEventListener("change", render);
+
+document.getElementById("themeToggle").addEventListener("click", () => {
+  document.body.classList.toggle("dark");
+  try { localStorage.setItem("theme", document.body.classList.contains("dark") ? "dark" : "light"); } catch (e) {}
+  render();
+});
+
+try {
+  if (localStorage.getItem("theme") === "dark") document.body.classList.add("dark");
+} catch (e) {}
+
+render();
+
+</script>
+</body>
+</html>
